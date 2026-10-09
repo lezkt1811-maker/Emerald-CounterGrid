@@ -1239,52 +1239,127 @@
     return true;
   }
 
+  // Ambient: a slow detuned pad on a minor chord, with a gently moving filter and stereo spread.
+  // Soft pentatonic plucks drift through a feedback delay. No noise layer, so no hiss.
+  var AMB_CHORD = [55, 82.41, 110, 130.81, 164.81];          // A1 E2 A2 C3 E3
+  var AMB_PLUCKS = [440, 523.25, 587.33, 659.25, 783.99, 880]; // A pentatonic, A4 upward
+
+  function buildAmbient(c, dest, now) {
+    var nodes = [];
+    var bus = c.createGain();
+    bus.gain.setValueAtTime(0, now);
+    bus.gain.linearRampToValueAtTime(0.9, now + 4);          // fade in over 4 s
+    bus.connect(dest);
+    nodes.push(bus);
+
+    // Shared warm filter, swept very slowly.
+    var lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 700;
+    lp.Q.value = 0.8;
+    lp.connect(bus);
+    nodes.push(lp);
+    var sweep = c.createOscillator();
+    var sweepAmt = c.createGain();
+    sweep.frequency.value = 0.04;
+    sweepAmt.gain.value = 260;
+    sweep.connect(sweepAmt).connect(lp.frequency);
+    sweep.start(now);
+    nodes.push(sweep, sweepAmt);
+
+    // Pad voices: two detuned triangles per note, each panned by its own slow LFO.
+    AMB_CHORD.forEach(function (f, i) {
+      var voice = c.createGain();
+      voice.gain.value = 0.11 / Math.sqrt(AMB_CHORD.length);
+      nodes.push(voice);
+      // voice -> stereo panner (if supported) -> filter
+      var pan = c.createStereoPanner ? c.createStereoPanner() : null;
+      if (pan) {
+        voice.connect(pan).connect(lp);
+        var panLfo = c.createOscillator();
+        var panAmt = c.createGain();
+        panLfo.frequency.value = 0.02 + i * 0.007;
+        panAmt.gain.value = 0.6;
+        panLfo.connect(panAmt).connect(pan.pan);
+        panLfo.start(now);
+        nodes.push(panLfo, panAmt, pan);
+      } else {
+        voice.connect(lp);
+      }
+      [-5, 6].forEach(function (cents) {
+        var o = c.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        o.detune.value = cents;
+        o.connect(voice);
+        o.start(now);
+        nodes.push(o);
+      });
+      // Gentle breathing on each voice.
+      var trem = c.createOscillator();
+      var tremAmt = c.createGain();
+      trem.frequency.value = 0.09 + i * 0.013;
+      tremAmt.gain.value = 0.035;
+      trem.connect(tremAmt).connect(voice.gain);
+      trem.start(now);
+      nodes.push(trem, tremAmt);
+    });
+
+    // Feedback delay for the plucks: a soft echo that never gets harsh.
+    var delay = c.createDelay(2);
+    delay.delayTime.value = 0.46;
+    var fb = c.createGain();
+    fb.gain.value = 0.42;
+    var dlp = c.createBiquadFilter();
+    dlp.type = 'lowpass';
+    dlp.frequency.value = 2400;
+    delay.connect(dlp).connect(fb).connect(delay);
+    dlp.connect(bus);
+    nodes.push(delay, fb, dlp);
+
+    return { nodes: nodes, pluckBus: delay };
+  }
+
+  function playPluck(c, target, when) {
+    var f = AMB_PLUCKS[Math.floor(Math.random() * AMB_PLUCKS.length)];
+    var o = c.createOscillator();
+    var g = c.createGain();
+    o.type = 'sine';
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(0.05, when + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + 2.6);
+    o.connect(g).connect(target);
+    o.start(when);
+    o.stop(when + 2.7);
+  }
+
   function startAmbient() {
     if (!AU.ctx || AU.ambNodes) return;
-    var c = AU.ctx, now = c.currentTime;
-    var sources = [];
-    var filter = c.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 420;
-    filter.Q.value = 0.7;
-    var lfo = c.createOscillator();
-    var lfoGain = c.createGain();
-    lfo.frequency.value = 0.05;
-    lfoGain.gain.value = 180;
-    lfo.connect(lfoGain).connect(filter.frequency);
-    lfo.start(now);
-    sources.push(lfo);
-    filter.connect(AU.amb);
-    [[55, 'sine', 0], [82.41, 'sine', 4], [110.5, 'triangle', -5]].forEach(function (v) {
-      var o = c.createOscillator();
-      var g = c.createGain();
-      o.type = v[1];
-      o.frequency.value = v[0];
-      o.detune.value = v[2];
-      g.gain.value = 0.22;
-      o.connect(g).connect(filter);
-      o.start(now);
-      sources.push(o);
-    });
-    var src = c.createBufferSource();
-    src.buffer = AU.noise;
-    src.loop = true;
-    var bp = c.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1200;
-    bp.Q.value = 0.5;
-    var ng = c.createGain();
-    ng.gain.value = 0.025;
-    src.connect(bp).connect(ng).connect(AU.amb);
-    src.start(now);
-    sources.push(src);
-    AU.ambNodes = sources;
+    var c = AU.ctx;
+    var built = buildAmbient(c, AU.amb, c.currentTime);
+    AU.ambNodes = built.nodes;
+    AU.ambBus = built.nodes[0];
+    AU.ambPluck = built.pluckBus;
+    var schedule = function () {
+      if (!AU.ambNodes) return;
+      playPluck(c, AU.ambPluck, c.currentTime + 0.05);
+      AU.pluckTimer = setTimeout(schedule, 2500 + Math.random() * 3500);
+    };
+    AU.pluckTimer = setTimeout(schedule, 3000);
   }
 
   function stopAmbient() {
+    clearTimeout(AU.pluckTimer);
     if (!AU.ambNodes) return;
-    AU.ambNodes.forEach(function (n) { try { n.stop(); } catch (e) { /* already stopped */ } });
+    var now = AU.ctx ? AU.ctx.currentTime : 0;
+    AU.ambNodes.forEach(function (n) {
+      try { if (n.stop) n.stop(now); } catch (e) { /* already stopped */ }
+    });
+    try { AU.ambBus.disconnect(); } catch (e) { /* already disconnected */ }
     AU.ambNodes = null;
+    AU.ambBus = null;
+    AU.ambPluck = null;
   }
 
   function updateAudioLevels() {
