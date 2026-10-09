@@ -224,6 +224,12 @@ The event engine (`events.js`) watches the calculated sky and fires when a condi
 - In the browser, the calculation clock can be moved with `window.LivingPortal.setClock('2026-01-15T12:00:00Z')` (or `?at=` in the URL). This changes only the date used for the calculation. It does not change the sky, and it is for testing only.
 - Browser checks run: the page finds the 13 Moon-enters-Ophiuchus events in 2026; the Jupiter–Saturn event fires between 20 and 25 October 2020; the banner shows the correct title; switching mode fires nothing; turning events off logs nothing; boost works with events on or off.
 
+## Lyra tone
+
+The LYRA button in the top bar plays a single tone, G♯5 (830.61 Hz). The pitch is an artistic choice for the palette. It has no physical, astronomical or healing basis, and the portal doesn't claim one.
+
+Why the tone is manual rather than triggered by the sky: no calculated condition involving the Sun, Moon or planets reaches Lyra. Vega, its brightest star, lies about 62° north of the ecliptic. Between 1950 and 2050 the closest the Moon came to Vega was about 56°, and the Sun about 62°. A trigger at any sensible orb would never fire, and a very wide orb would fire almost all the time. Tapping LYRA turns sound on if it's off.
+
 ## Electric effects and safety
 
 - **Electric glitch:** horizontal slice shifts, coloured glitch bars, lightning bolts, and a CSS scanline and vignette overlay. Turn off with *Electric glitch effects* in the settings.

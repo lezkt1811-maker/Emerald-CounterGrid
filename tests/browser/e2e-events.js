@@ -6,6 +6,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  // Track AudioContext instances so the audio checks can read their state.
+  await ctx.addInitScript(() => {
+    window.__ctxs = [];
+    const Orig = window.AudioContext;
+    window.AudioContext = function (...a) { const c = new Orig(...a); window.__ctxs.push(c); return c; };
+    window.AudioContext.prototype = Orig.prototype;
+  });
   const errors = [];
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
@@ -87,6 +94,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   }
   check('canvas changes frame to frame (animation alive during glitch/boost)', glitchSeen);
   check('no JavaScript errors during events and glitch', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+  // 10. LYRA button: turns sound on if needed and plays the tone (manual trigger).
+  const lyraOk = await page.evaluate(async () => {
+    const before = window.__ctxs.length;
+    document.getElementById('btnLyra').click();
+    await new Promise(r => setTimeout(r, 300));
+    const ctxs = window.__ctxs;
+    return { created: ctxs.length >= before, state: ctxs.length ? ctxs[ctxs.length - 1].state : 'none',
+      soundLabel: document.getElementById('btnSound').textContent };
+  });
+  check('LYRA button turns sound on and starts audio', lyraOk.state === 'running' && lyraOk.soundLabel === 'SOUND ON', JSON.stringify(lyraOk));
 
   await browser.close();
   const failed = results.filter(x => !x).length;
