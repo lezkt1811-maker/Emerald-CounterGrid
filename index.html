@@ -1454,9 +1454,30 @@
     sw.stop(t + 1);
   }
 
+  // Lyra tone. An artistic choice: G#5 (830.61 Hz), picked for the palette. It has no
+  // physical, astronomical or healing basis, and the portal does not claim one.
+  var LYRA_HZ = 830.61;
+  function playLyraTone() {
+    if (!settings.sound || !settings.activation || !AU.ctx) return;
+    var c = AU.ctx, t = c.currentTime;
+    [[LYRA_HZ, 0.07], [LYRA_HZ / 2, 0.03]].forEach(function (v, j) {
+      var o = c.createOscillator();
+      var g = c.createGain();
+      o.type = j ? 'triangle' : 'sine';
+      o.frequency.value = v[0];
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(v[1], t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
+      o.connect(g).connect(AU.fx);
+      o.start(t);
+      o.stop(t + 2.3);
+    });
+  }
+
   // Event sound: a crackle of stuttered noise, plus a chime for the bigger responses.
   function playEventSound(effects) {
     if (!settings.sound || !settings.activation || !AU.ctx) return;
+    if (effects.indexOf('lyra') >= 0) playLyraTone();
     var c = AU.ctx, t = c.currentTime;
     var src = c.createBufferSource();
     src.buffer = AU.noise;
@@ -1474,7 +1495,7 @@
     src.connect(hp).connect(g).connect(AU.fx);
     src.start(t, Math.random() * 1.5);
     src.stop(t + 0.75);
-    if (effects.indexOf('ophi') >= 0 || effects.indexOf('wave') >= 0 || effects.indexOf('aspect') >= 0) {
+    if (effects.indexOf('lyra') < 0 && (effects.indexOf('ophi') >= 0 || effects.indexOf('wave') >= 0 || effects.indexOf('aspect') >= 0)) {
       [523.25, 784].forEach(function (f, j) {
         var o = c.createOscillator();
         var og = c.createGain();
