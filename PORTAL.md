@@ -8,8 +8,12 @@ The purpose of the project is described in the [README](README.md). This file co
 |---|---|
 | `index.html` | The whole application: canvas renderer, controls, Web Audio, settings. |
 | `astro.js` | Planetary positions and the two mapping modes. Wraps the bundled library. |
+| `events.js` | The astronomical event engine: event definitions and transition detection. |
 | `vendor/astronomy.browser.min.js` | astronomy-engine 2.1.19 (MIT), unmodified. See `vendor/README.md`. |
 | `tests/astro-check.js` | Node checks for the calculation and both mapping modes. |
+| `tests/events-check.js` | Node checks for the event engine, including real sky events. |
+| `tests/browser/e2e-full.js` | Playwright checks of the controls, modes, sound, failure path and layout (32 checks). |
+| `tests/browser/e2e-events.js` | Playwright checks of events, banner, glitch and the event hook (10 checks). |
 
 ## Running it
 
@@ -138,9 +142,20 @@ There is no build step. Nothing is loaded from a CDN, so the page needs no exter
 
 ```bash
 node tests/astro-check.js
+node tests/events-check.js
 ```
 
-Checks the calculation and both mapping modes, as in the table above.
+`astro-check.js` covers the calculation and both mapping modes, as in the table above. `events-check.js` covers the event engine.
+
+Browser tests need Playwright and a local server:
+
+```bash
+python3 -m http.server 8766 &
+PORTAL_URL=http://localhost:8766/index.html node tests/browser/e2e-full.js
+PORTAL_URL=http://localhost:8766/index.html node tests/browser/e2e-events.js
+```
+
+Set `CHROMIUM_PATH` if Chromium is not on Playwright's default path. Set `PLAYWRIGHT_PATH` if Playwright is not installed locally.
 
 ### In a browser
 
@@ -178,3 +193,41 @@ These are automated checks in headless Chromium, not tests on a physical Samsung
 - Pluto and the Moon have not been checked against reference data beyond the events listed above.
 - Timers for boost and overdrive use wall-clock time, so they keep counting while the page is hidden. The animation itself does not run while hidden.
 - The development checks did not include a physical Samsung device.
+
+## Celestial events
+
+The event engine (`events.js`) watches the calculated sky and fires when a condition becomes true. It fires on the transition, not on every calculation while the condition holds. Nothing in it is random, and it detects nothing outside the calculation.
+
+| Event | Condition | Visual response |
+|---|---|---|
+| Moon enters Ophiuchus | Moon's IAU constellation changes to Ophiuchus | Ophiuchus node and serpent flare, sweep around the ring, bolts to the node |
+| A planet enters Ophiuchus | Any planet's IAU constellation changes to Ophiuchus | Ophiuchus flare and bolt |
+| Sun and Moon in conjunction | Angular separation ≤ 8° (haversine on J2000 RA/Dec) | Luminous line between the two markers, bolt |
+| Jupiter and Saturn in conjunction | Angular separation ≤ 6° | Luminous line, sweep around the ring |
+| Gathering | At least 3 of the 8 planets within 30° of one another | Bolts from the centre to each gathered planet |
+| Sign crossing | A planet's sign band changes (current mapping mode) | Sweep around the ring |
+
+- **Definitions are data.** Edit `DEFAULT_EVENTS` in `events.js` to add or change events. Each entry names its type (`enter`, `aspect`, `gather` or `signChange`), its bodies or constellation, and its visual effects.
+- **Cooldown:** the same event is not repeated within 15 minutes. A clock that moves backwards is not treated as a repeat.
+- **Mode switches** reset the engine, so changing mode never fires events by itself.
+- **Automatic events** can be switched off in the settings. The engine keeps tracking while they are off, so turning them back on does not replay a backlog.
+- **Timing:** events are detected at each recalculation, every 30 seconds. The event time is the calculation time, so it can lag the exact crossing by up to 30 seconds. The check on the Moon's 2026 entries used 6-hour steps and matched the independent count exactly.
+- **Accuracy of the trigger:** an event is only as good as the position it is computed from. Moon events inherit the Moon's accuracy, and aspect events inherit both bodies' accuracy.
+
+### Testing events
+
+- `node tests/events-check.js` runs synthetic transition tests, a backwards-clock test, and real sky checks:
+  - Jupiter–Saturn fires once, in October 2020.
+  - Moon-enters-Ophiuchus events in 2026 match an independent count of 13.
+  - Sun–Moon conjunctions within 8° in 2026 number 12.
+  - Mode A sign crossings for the Moon in Jan–Mar 2026 match an independent count.
+- In the browser, the calculation clock can be moved with `window.LivingPortal.setClock('2026-01-15T12:00:00Z')` (or `?at=` in the URL). This changes only the date used for the calculation. It does not change the sky, and it is for testing only.
+- Browser checks run: the page finds the 13 Moon-enters-Ophiuchus events in 2026; the Jupiter–Saturn event fires between 20 and 25 October 2020; the banner shows the correct title; switching mode fires nothing; turning events off logs nothing; boost works with events on or off.
+
+## Electric effects and safety
+
+- **Electric glitch:** horizontal slice shifts, coloured glitch bars, lightning bolts, and a CSS scanline and vignette overlay. Turn off with *Electric glitch effects* in the settings.
+- **Photosensitivity:** glitch bursts are at most about one every 1.2 seconds during a boost and about one every 2.5 to 6 seconds otherwise, each lasting under 0.3 seconds. Ambient arcs are limited to about two per second while boosting and one per second otherwise. The effects don't use full-screen brightness flashes. If you are sensitive to flashing light, turn off the glitch effects and use reduced motion.
+- **Reduced motion** turns off the glitch, the ambient arcs and the event bolts. Events still show their banner and play their sound, if sound is on.
+- **Battery-friendly mode** turns off the glitch and the ambient arcs.
+- The effects are a visual and audio experience. They do not change the calculated sky, and nothing in the portal claims they do.
