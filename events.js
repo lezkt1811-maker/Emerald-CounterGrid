@@ -37,10 +37,7 @@
     { id: 'gathering', type: 'gather', bodies: PLANETS, minBodies: 3, span: 30,
       title: 'Three or more planets gather within 30°', effects: ['gather', 'lightning'] },
     { id: 'sign-crossing', type: 'signChange', body: '*',
-      title: 'A planet crosses a sign boundary', effects: ['wave'] },
-    // Lyra is not one of the 13 zodiacal constellations, so it has no node. Its event plays a tone instead.
-    { id: 'planet-lyra', type: 'enter', body: '*', constellation: 'Lyr',
-      title: 'A planet enters Lyra', effects: ['lyra', 'wave'] }
+      title: 'A planet crosses a sign boundary', effects: ['wave'] }
   ];
 
   // Angular separation (degrees) between two J2000 equatorial positions, haversine form.

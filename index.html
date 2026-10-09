@@ -145,6 +145,7 @@
   <div class="top-btns">
     <button id="btnSound" class="pill" aria-pressed="false">SOUND OFF</button>
     <button id="btnPause" class="pill" aria-pressed="false">PAUSE</button>
+    <button id="btnLyra" class="pill" aria-label="Play the Lyra tone">LYRA</button>
     <button id="btnMenu" class="pill">DATA &amp; SETTINGS</button>
   </div>
   <div class="mode" id="modeLine">Calculating planetary positions…</div>
@@ -1665,6 +1666,11 @@
 
   // ---------- wiring ----------
   el.sound.addEventListener('click', function () { setSound(!settings.sound); });
+  // The Lyra tone is manual: no calculated trigger reaches Lyra (see PORTAL.md). Tapping it turns sound on if needed.
+  $('btnLyra').addEventListener('click', function () {
+    if (!settings.sound) setSound(true);
+    playLyraTone();
+  });
   el.pause.addEventListener('click', function () { setPaused(!S.paused); });
   el.boost.addEventListener('click', pressBoost);
   el.over.addEventListener('click', pressOverdrive);
