@@ -72,6 +72,16 @@
   }
   .pill[aria-pressed="true"] { border-color: var(--pink); color: #fff; }
 
+  /* Planet tip: tap a planet to see its full name */
+  #tip {
+    position: fixed; z-index: 4; pointer-events: none; transform: translate(-50%, -100%);
+    padding: 8px 12px; border-radius: 10px; background: rgba(5,5,8,0.9);
+    border: 1px solid var(--cyan); box-shadow: 0 0 14px rgba(0,240,255,.3);
+    font-size: 13px; color: #fff; white-space: nowrap; text-align: center;
+  }
+  #tip .tn { font-weight: 700; letter-spacing: .06em; }
+  #tip .td { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+
   /* Event banner: appears when a calculated event fires, then fades */
   #banner {
     position: fixed; left: 12px; right: 12px; top: 38%; z-index: 3; pointer-events: none;
@@ -154,6 +164,7 @@
   <div class="mode" id="modeLine">Calculating planetary positions…</div>
 </header>
 
+<div id="tip" hidden role="status"><span class="tn"></span><span class="td"></span></div>
 <div id="banner" role="status" aria-live="polite"><span class="bt" id="bannerTitle"></span><span class="bd" id="bannerDetail"></span></div>
 
 <div class="bottom">
@@ -1733,6 +1744,34 @@
     if (e.key === 'Escape') el.drawer.hidden = true;
   });
 
+  // Tap a planet to see its full name. Labels on the ring stay short.
+  var tipTimer = 0;
+  function showTip(mk) {
+    var tip = $('tip');
+    tip.querySelector('.tn').textContent = mk.name;
+    var where = settings.mapping === 'B' ? mk.constellation : mk.sign + ' (' + Math.round(mk.frac * 100) + '%)';
+    tip.querySelector('.td').textContent = mk.lonDate.toFixed(1) + '° · ' + where;
+    var p = markerPos(mk.name);
+    tip.style.left = p[0] + 'px';
+    tip.style.top = (p[1] - 14) + 'px';
+    tip.hidden = false;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(function () { tip.hidden = true; }, 3500);
+  }
+  canvas.addEventListener('click', function (e) {
+    var rect = canvas.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    var best = null, bestD = Math.max(28, S.R * 0.14);
+    S.markers.forEach(function (mk) {
+      if (mk.node < 0 || mk.shown === undefined) return;
+      var p = markerPos(mk.name);
+      var d = Math.hypot(p[0] - x, p[1] - y);
+      if (d < bestD) { bestD = d; best = mk; }
+    });
+    if (best) showTip(best);
+    else $('tip').hidden = true;
+  });
+
   // Test hook. Lets a tester move the calculation clock and read events. It does not change the sky.
   window.LivingPortal = {
     setClock: function (iso) { S.clockOffset = iso ? Date.parse(iso) - Date.now() : 0; recalc(); },
@@ -1741,7 +1780,8 @@
     markers: function () {
       return S.markers.map(function (m) { return { name: m.name, node: m.node, sign: m.sign, constellation: m.constellation }; });
     },
-    setMapping: function (m) { settings.mapping = m === 'B' ? 'B' : 'A'; saveSettings(); recalc(); }
+    setMapping: function (m) { settings.mapping = m === 'B' ? 'B' : 'A'; saveSettings(); recalc(); },
+    markerPosition: function (name) { var p = markerPos(name); return p ? { x: p[0], y: p[1] } : null; }
   };
 
   // ---------- boot ----------
