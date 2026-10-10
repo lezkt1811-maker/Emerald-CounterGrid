@@ -209,6 +209,7 @@
 
     <h3>VISUALS</h3>
     <label>Electric glitch effects <input id="setGlitch" type="checkbox"></label>
+    <label>Real sky behind the portal <input id="setSky" type="checkbox"></label>
     <label>Visual intensity
       <select id="setIntensity">
         <option value="low">Low</option>
@@ -220,12 +221,14 @@
     <label>Reduced motion <input id="setReduced" type="checkbox"></label>
 
     <p class="note">Settings are stored only in this browser (localStorage). Nothing is sent anywhere. See PORTAL.md for method, accuracy, safety and testing.</p>
+    <p class="note" id="buildLine">Build: 2026-10-10 · planet size and tap names · if you don't see these, clear the site data and reload.</p>
   </div>
 </section>
 
 <script src="vendor/astronomy.browser.min.js"></script>
 <script src="astro.js"></script>
 <script src="events.js"></script>
+<script src="sky-data.js"></script>
 <script>
 (function () {
   'use strict';
@@ -271,7 +274,7 @@
   var DEFAULTS = {
     sound: false, volume: 0.6, ambient: true, activation: true,
     intensity: 'normal', battery: false, reduced: null, mapping: 'A',
-    events: true, glitch: true
+    events: true, glitch: true, skyChart: true
   };
 
   // ---------- settings (localStorage, every access guarded) ----------
@@ -322,6 +325,7 @@
     nodeShown: new Array(13).fill(0.16),
     markers: [], planets: null, planetError: null, calcAt: 0,
     stars: [], particles: [], bursts: [], bolts: [],
+    skyLines: [], skyStars: [],
     arcTimer: 0, glitchNext: 0, glitchUntil: 0,
     eventLog: [], eventHistory: [], bannerUntil: 0
   };
@@ -360,6 +364,7 @@
     S.cx = S.w / 2;
     S.cy = S.h * 0.5;
     S.R = Math.max(90, Math.min(S.w * 0.44, S.h * 0.36));
+    buildSky();
     seedStars();
     seedParticles();
     if (!running()) drawFrame();
@@ -415,6 +420,70 @@
   function hash(n) {
     var x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
     return x - Math.floor(x);
+  }
+
+  // ---------- real sky behind the portal ----------
+  // A fixed stereographic chart centred between Scorpius, Ophiuchus, Hercules and Lyra.
+  // It doesn't rotate, so it costs nothing per frame. East is to the left, as on a sky map.
+  var SKY_CENTRE = { ra: 268, dec: 10 };
+  var SKY_EDGE_DEG = 70;   // angular radius of the chart edge
+  var DEG = Math.PI / 180;
+
+  // J2000 RA and Dec (degrees) -> [x, y] in CSS pixels, or null outside the chart.
+  function projectSky(ra, dec) {
+    var a0 = SKY_CENTRE.ra * DEG, d0 = SKY_CENTRE.dec * DEG;
+    var a = ra * DEG, d = dec * DEG;
+    var cosC = Math.sin(d0) * Math.sin(d) + Math.cos(d0) * Math.cos(d) * Math.cos(a - a0);
+    if (cosC < Math.cos(SKY_EDGE_DEG * DEG)) return null;
+    var k = 2 / (1 + cosC);
+    var x = k * Math.cos(d) * Math.sin(a - a0);
+    var y = k * (Math.cos(d0) * Math.sin(d) - Math.sin(d0) * Math.cos(d) * Math.cos(a - a0));
+    // Unit radius 2*tan(c/2); the chart edge (70 deg) maps to half the shorter screen side.
+    var sc = (Math.min(S.w, S.h) * 0.5) / (2 * Math.tan(SKY_EDGE_DEG * DEG / 2));
+    return [S.cx - x * sc, S.cy - y * sc];
+  }
+
+  function buildSky() {
+    S.skyStars = [];
+    S.skyLines = [];
+    if (!window.SKY_DATA) return;
+    SKY_DATA.stars.forEach(function (st) {
+      var p = projectSky(st[0], st[1]);
+      if (p) S.skyStars.push({ x: p[0], y: p[1], mag: st[2] });
+    });
+    SKY_DATA.lines.forEach(function (seg) {
+      for (var i = 1; i < seg.length; i++) {
+        var a = projectSky(seg[i - 1][0], seg[i - 1][1]);
+        var b = projectSky(seg[i][0], seg[i][1]);
+        if (a && b && Math.hypot(a[0] - b[0], a[1] - b[1]) < Math.max(S.w, S.h) * 0.5) {
+          S.skyLines.push([a[0], a[1], b[0], b[1]]);
+        }
+      }
+    });
+  }
+
+  function drawSky() {
+    if (!settings.skyChart) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(0,240,255,0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var i = 0; i < S.skyLines.length; i++) {
+      var l = S.skyLines[i];
+      ctx.moveTo(l[0], l[1]);
+      ctx.lineTo(l[2], l[3]);
+    }
+    ctx.stroke();
+    for (var j = 0; j < S.skyStars.length; j++) {
+      var st = S.skyStars[j];
+      var r = Math.max(0.5, (5 - st.mag) * 0.4);
+      ctx.fillStyle = 'rgba(220,240,255,' + Math.min(0.85, 0.3 + (5 - st.mag) * 0.12).toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // ---------- planetary calculation ----------
@@ -1093,6 +1162,7 @@
 
   function drawFrame() {
     drawBackground();
+    drawSky();
     drawStars();
     drawVortex();
     drawPlasma(0.6 + 0.6 * S.boostLevel + 0.4 * S.odLevel);
@@ -1680,6 +1750,7 @@
     el.mapping.value = settings.mapping;
     el.events.checked = !!settings.events;
     el.glitch.checked = !!settings.glitch;
+    $('setSky').checked = !!settings.skyChart;
   }
 
   function applySettingChange() {
@@ -1710,6 +1781,7 @@
   el.mapping.addEventListener('change', function () { settings.mapping = el.mapping.value; saveSettings(); recalc(); });
   el.events.addEventListener('change', function () { settings.events = el.events.checked; saveSettings(); });
   el.glitch.addEventListener('change', function () { settings.glitch = el.glitch.checked; applySettingChange(); });
+  $('setSky').addEventListener('change', function () { settings.skyChart = $('setSky').checked; saveSettings(); if (!running()) drawFrame(); });
   el.volume.addEventListener('input', function () { settings.volume = parseFloat(el.volume.value); saveSettings(); updateAudioLevels(); });
   el.ambient.addEventListener('change', function () { settings.ambient = el.ambient.checked; saveSettings(); updateAudioLevels(); });
   el.activation.addEventListener('change', function () { settings.activation = el.activation.checked; saveSettings(); });
@@ -1781,7 +1853,9 @@
       return S.markers.map(function (m) { return { name: m.name, node: m.node, sign: m.sign, constellation: m.constellation }; });
     },
     setMapping: function (m) { settings.mapping = m === 'B' ? 'B' : 'A'; saveSettings(); recalc(); },
-    markerPosition: function (name) { var p = markerPos(name); return p ? { x: p[0], y: p[1] } : null; }
+    markerPosition: function (name) { var p = markerPos(name); return p ? { x: p[0], y: p[1] } : null; },
+    skyPosition: function (ra, dec) { var p = projectSky(ra, dec); return p ? { x: p[0], y: p[1] } : null; },
+    skyCounts: function () { return { stars: S.skyStars.length, lines: S.skyLines.length }; }
   };
 
   // ---------- boot ----------
